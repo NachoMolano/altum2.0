@@ -1,10 +1,15 @@
 import asyncio
+import sys
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+
+# Ensure project root is in path so 'app' and 'config' modules are found
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db.session import Base
 from app.models.conversation import Conversation, Message, ProspectProfile  # noqa: F401
