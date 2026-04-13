@@ -19,7 +19,13 @@ target_metadata = Base.metadata
 
 def _get_url() -> str:
     import os
-    return os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+    url = os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+    # Convert Supabase/standard postgres URL to asyncpg driver
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:
