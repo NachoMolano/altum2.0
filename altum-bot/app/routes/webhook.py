@@ -42,6 +42,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
 
     for entry in payload.get("entry", []):
+        logger.info("[WEBHOOK] entry keys=%s changes_fields=%s", list(entry.keys()), [c.get("field") for c in entry.get("changes", [])])
         # Instagram sends events under "changes", fallback to "messaging"
         events = [c.get("value", {}) for c in entry.get("changes", []) if c.get("field") == "messages"]
         events += entry.get("messaging", [])
