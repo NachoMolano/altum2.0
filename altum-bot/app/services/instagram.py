@@ -58,7 +58,9 @@ async def fetch_message(message_id: str) -> dict:
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, params=params)
             if resp.status_code == 200:
-                return resp.json()
+                data = resp.json()
+                logger.info("[INSTAGRAM] Fetched message data: %s", data)
+                return data
             logger.error("[INSTAGRAM] Failed to fetch message %s: %s", message_id, resp.text)
     except httpx.HTTPError as e:
         logger.error("[INSTAGRAM] HTTP error fetching message: %s", e)
