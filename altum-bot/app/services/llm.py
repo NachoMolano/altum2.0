@@ -58,7 +58,7 @@ async def _call_gemini(messages: list[dict], system: str, max_tokens: int) -> st
 
     genai.configure(api_key=settings.GOOGLE_API_KEY)
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash-preview-05-20",
+        model_name="gemini-2.5-flash",
         system_instruction=system,
         generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
     )
