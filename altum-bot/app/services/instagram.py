@@ -47,6 +47,24 @@ def _split_message(text: str) -> list[str]:
     return chunks
 
 
+async def fetch_message(message_id: str) -> dict:
+    """Fetch message details (from, text) from the Graph API by message ID."""
+    url = f"https://graph.instagram.com/v19.0/{message_id}"
+    params = {
+        "fields": "id,from,to,message",
+        "access_token": settings.INSTAGRAM_PAGE_ACCESS_TOKEN,
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                return resp.json()
+            logger.error("[INSTAGRAM] Failed to fetch message %s: %s", message_id, resp.text)
+    except httpx.HTTPError as e:
+        logger.error("[INSTAGRAM] HTTP error fetching message: %s", e)
+    return {}
+
+
 async def send_message(recipient_id: str, text: str) -> bool:
     """Send a text message to an Instagram user via Graph API."""
     chunks = _split_message(text)
