@@ -48,22 +48,25 @@ def _split_message(text: str) -> list[str]:
 
 
 async def fetch_message(message_id: str) -> dict:
-    """Fetch message details (from, text) from the Graph API by message ID."""
-    url = f"https://graph.instagram.com/v19.0/{message_id}"
+    """Fetch message details (from, text) via conversations endpoint."""
+    url = "https://graph.instagram.com/v19.0/me/conversations"
     params = {
-        "fields": "id,from,to,message",
+        "platform": "instagram",
+        "fields": "messages.limit(1){id,from,to,message,created_time}",
         "access_token": settings.INSTAGRAM_PAGE_ACCESS_TOKEN,
     }
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, params=params)
+            data = resp.json()
+            logger.info("[INSTAGRAM] Conversations response: %s", data)
             if resp.status_code == 200:
-                data = resp.json()
-                logger.info("[INSTAGRAM] Fetched message data: %s", data)
-                return data
-            logger.error("[INSTAGRAM] Failed to fetch message %s: %s", message_id, resp.text)
+                for conv in data.get("data", []):
+                    for msg in conv.get("messages", {}).get("data", []):
+                        if msg.get("id") == message_id:
+                            return msg
     except httpx.HTTPError as e:
-        logger.error("[INSTAGRAM] HTTP error fetching message: %s", e)
+        logger.error("[INSTAGRAM] HTTP error fetching conversations: %s", e)
     return {}
 
 
