@@ -53,6 +53,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             message = event.get("message", {})
             text = message.get("text")
             message_id = message.get("mid")
+            logger.info("[WEBHOOK] sender=%s recipient=%s text=%s event_keys=%s", sender_id, recipient_id, text, list(event.keys()))
 
             # 3. Skip echo messages
             if not sender_id or not text or sender_id == recipient_id:
