@@ -76,6 +76,7 @@ async def fetch_message(message_id: str) -> dict:
 def _extract_text_from_attachments(msg: dict) -> str | None:
     """Extract text from message attachments (e.g. phone number contact cards)."""
     attachments = msg.get("attachments", {}).get("data", [])
+    logger.info("[INSTAGRAM] Extracting from attachments: %s", attachments)
     for att in attachments:
         # Contact card with phone number
         if att.get("type") == "contact":
