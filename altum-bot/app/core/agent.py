@@ -101,10 +101,10 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
         conversation.updated_at = datetime.utcnow()
 
         # 10. Send visible response to Instagram
-        await instagram.send_message(instagram_user_id, visible_text)
+        send_ok = await instagram.send_message(instagram_user_id, visible_text)
 
-        # 11. Handle onboarding completion
-        if profile_data and conversation.state == "active":
+        # 11. Handle onboarding completion — only if message was delivered
+        if send_ok and profile_data and conversation.state == "active":
             profile_data["instagram_user_id"] = instagram_user_id
 
             # Save profile to DB
