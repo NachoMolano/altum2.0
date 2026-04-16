@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     INSTAGRAM_VERIFY_TOKEN: str = ""
     INSTAGRAM_PAGE_ACCESS_TOKEN: str = ""
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
+    FACEBOOK_PAGE_ACCESS_TOKEN: str = ""
     DATABASE_URL: str = ""
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
     GOOGLE_SPREADSHEET_ID: str = ""

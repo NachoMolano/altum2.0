@@ -49,11 +49,11 @@ def _split_message(text: str) -> list[str]:
 
 async def fetch_message(message_id: str) -> dict:
     """Fetch message details (from, text) via conversations endpoint."""
-    url = f"https://graph.instagram.com/v25.0/{settings.INSTAGRAM_BUSINESS_ACCOUNT_ID}/conversations"
+    url = f"https://graph.facebook.com/v25.0/{settings.INSTAGRAM_BUSINESS_ACCOUNT_ID}/conversations"
     params = {
         "platform": "instagram",
         "fields": "messages.limit(1){id,from,to,message,created_time}",
-        "access_token": settings.INSTAGRAM_PAGE_ACCESS_TOKEN,
+        "access_token": settings.FACEBOOK_PAGE_ACCESS_TOKEN,
     }
     try:
         async with httpx.AsyncClient() as client:
