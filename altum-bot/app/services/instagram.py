@@ -52,11 +52,11 @@ async def fetch_message(message_id: str) -> dict:
     url = "https://graph.facebook.com/v25.0/me/conversations"
     params = {
         "platform": "instagram",
-        "fields": "messages.limit(1){id,from,to,message,created_time}",
+        "fields": "messages.limit(1){id,from,to,message,attachments,created_time}",
         "access_token": settings.FACEBOOK_PAGE_ACCESS_TOKEN,
     }
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url, params=params)
             data = resp.json()
             logger.info("[INSTAGRAM] Conversations response: %s", data)
@@ -64,10 +64,31 @@ async def fetch_message(message_id: str) -> dict:
                 for conv in data.get("data", []):
                     for msg in conv.get("messages", {}).get("data", []):
                         if msg.get("id") == message_id:
+                            # If no text, try to extract from attachments
+                            if not msg.get("message"):
+                                msg["message"] = _extract_text_from_attachments(msg)
                             return msg
     except httpx.HTTPError as e:
         logger.error("[INSTAGRAM] HTTP error fetching conversations: %s", e)
     return {}
+
+
+def _extract_text_from_attachments(msg: dict) -> str | None:
+    """Extract text from message attachments (e.g. phone number contact cards)."""
+    attachments = msg.get("attachments", {}).get("data", [])
+    for att in attachments:
+        # Contact card with phone number
+        if att.get("type") == "contact":
+            payload = att.get("payload", {})
+            phone = payload.get("phone_number") or payload.get("contact", {}).get("phone")
+            if phone:
+                return phone
+        # Fallback: any attachment with a name or URL as text
+        name = att.get("name") or att.get("title")
+        if name:
+            return name
+    logger.warning("[INSTAGRAM] No text extracted from attachments: %s", attachments)
+    return None
 
 
 async def send_message(recipient_id: str, text: str) -> bool:

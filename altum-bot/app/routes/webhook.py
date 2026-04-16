@@ -54,6 +54,17 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             text = message.get("text")
             message_id = message.get("mid")
 
+            # Extract text from attachments (e.g. contact cards with phone numbers)
+            if not text and message.get("attachments"):
+                for att in message["attachments"]:
+                    if att.get("type") == "contact":
+                        payload = att.get("payload", {})
+                        text = payload.get("phone_number") or payload.get("contact", {}).get("phone")
+                    if not text:
+                        text = att.get("title") or att.get("name")
+                    if text:
+                        break
+
             # Handle message_edit with num_edit=0 (new message, no sender info)
             msg_edit = event.get("message_edit", {})
             if msg_edit and msg_edit.get("num_edit", -1) == 0 and not sender_id:
