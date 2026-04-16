@@ -7,7 +7,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-GRAPH_API_URL = "https://graph.instagram.com/v19.0/me/messages"
+GRAPH_API_URL = "https://graph.instagram.com/v25.0/me/messages"
 MAX_MESSAGE_LENGTH = 900
 
 
@@ -49,7 +49,7 @@ def _split_message(text: str) -> list[str]:
 
 async def fetch_message(message_id: str) -> dict:
     """Fetch message details (from, text) via conversations endpoint."""
-    url = f"https://graph.instagram.com/v19.0/{settings.INSTAGRAM_BUSINESS_ACCOUNT_ID}/conversations"
+    url = f"https://graph.instagram.com/v25.0/{settings.INSTAGRAM_BUSINESS_ACCOUNT_ID}/conversations"
     params = {
         "platform": "instagram",
         "fields": "messages.limit(1){id,from,to,message,created_time}",
