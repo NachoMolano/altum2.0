@@ -18,6 +18,23 @@ ONBOARDING_TOKEN = "[ONBOARDING_COMPLETE]"
 
 async def process_message(instagram_user_id: str, text: str, message_id: str | None = None) -> None:
     """Main agent flow: receive a user message, generate a response, handle onboarding completion."""
+    # Handle reset command
+    if text.strip().upper() == "/RESET":
+        async with SessionLocal() as session:
+            from sqlalchemy import update
+            await session.execute(
+                update(Conversation)
+                .where(
+                    Conversation.instagram_user_id == instagram_user_id,
+                    Conversation.state == "active",
+                )
+                .values(state="reset")
+            )
+            await session.commit()
+        await instagram.send_message(instagram_user_id, "Conversación reiniciada. ¡Hola! ¿En qué puedo ayudarte?")
+        logger.info("[AGENT] Conversation reset for user=%s", instagram_user_id)
+        return
+
     async with SessionLocal() as session:
         # 1. Find or create conversation
         conversation = await _get_or_create_conversation(session, instagram_user_id)
