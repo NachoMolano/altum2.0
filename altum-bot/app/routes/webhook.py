@@ -57,6 +57,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             # Handle message_edit with num_edit=0 (new message, no sender info)
             msg_edit = event.get("message_edit", {})
             if msg_edit and msg_edit.get("num_edit", -1) == 0 and not sender_id:
+                logger.info("[WEBHOOK] message_edit raw event=%s", event)
                 mid = msg_edit.get("mid")
                 if mid:
                     from app.services.instagram import fetch_message
