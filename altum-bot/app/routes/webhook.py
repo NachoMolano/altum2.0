@@ -54,6 +54,11 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             text = message.get("text")
             message_id = message.get("mid")
 
+            # Skip echoes of messages sent by the bot itself
+            if message.get("is_echo"):
+                logger.info("[WEBHOOK] Skipping echo message mid=%s", message_id)
+                continue
+
             # Extract text from attachments (e.g. contact cards with phone numbers)
             if not text and message.get("attachments"):
                 for att in message["attachments"]:

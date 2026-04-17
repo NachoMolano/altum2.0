@@ -47,12 +47,31 @@ def _split_message(text: str) -> list[str]:
     return chunks
 
 
-async def fetch_message(message_id: str) -> dict:
-    """Fetch message details (from, text) via conversations endpoint."""
+async def _fetch_message_direct(message_id: str) -> dict:
+    """Fetch a single message directly by ID (more reliable than conversations)."""
+    url = f"https://graph.facebook.com/v25.0/{message_id}"
+    params = {
+        "fields": "id,from,to,message,attachments{type,payload,url,title,name,mime_type,file_url},created_time",
+        "access_token": settings.FACEBOOK_PAGE_ACCESS_TOKEN,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, params=params)
+            data = resp.json()
+            logger.info("[INSTAGRAM] Direct message fetch response: %s", data)
+            if resp.status_code == 200 and data.get("id"):
+                return data
+    except httpx.HTTPError as e:
+        logger.error("[INSTAGRAM] HTTP error fetching message direct: %s", e)
+    return {}
+
+
+async def _fetch_via_conversations(message_id: str) -> dict:
+    """Fetch message via conversations endpoint (fallback)."""
     url = "https://graph.facebook.com/v25.0/me/conversations"
     params = {
         "platform": "instagram",
-        "fields": "messages.limit(1){id,from,to,message,attachments,created_time}",
+        "fields": "messages.limit(5){id,from,to,message,attachments{type,payload,url,title,name,mime_type,file_url},created_time}",
         "access_token": settings.FACEBOOK_PAGE_ACCESS_TOKEN,
     }
     try:
@@ -64,13 +83,75 @@ async def fetch_message(message_id: str) -> dict:
                 for conv in data.get("data", []):
                     for msg in conv.get("messages", {}).get("data", []):
                         if msg.get("id") == message_id:
-                            # If no text, try to extract from attachments
-                            if not msg.get("message"):
-                                msg["message"] = _extract_text_from_attachments(msg)
                             return msg
     except httpx.HTTPError as e:
         logger.error("[INSTAGRAM] HTTP error fetching conversations: %s", e)
     return {}
+
+
+async def fetch_message(message_id: str, max_retries: int = 3) -> dict:
+    """Fetch message details with retry. Tries direct fetch first, then conversations."""
+    for attempt in range(max_retries):
+        if attempt > 0:
+            # Wait before retry — Meta may need time to index the message
+            await asyncio.sleep(1.5 * attempt)
+            logger.info("[INSTAGRAM] Retry attempt %d for mid=%s", attempt + 1, message_id)
+
+        # Try direct fetch first (more reliable)
+        msg = await _fetch_message_direct(message_id)
+        if not msg:
+            msg = await _fetch_via_conversations(message_id)
+
+        if not msg:
+            continue
+
+        # If message is empty, try extracting from attachments
+        if not msg.get("message"):
+            extracted = _extract_text_from_attachments(msg)
+            if extracted:
+                msg["message"] = extracted
+
+        # Last resort: regex phone extraction from any string field
+        if not msg.get("message"):
+            phone = _extract_phone_from_any(msg)
+            if phone:
+                logger.info("[INSTAGRAM] Extracted phone via regex: %s", phone)
+                msg["message"] = phone
+
+        if msg.get("message"):
+            return msg
+
+    logger.warning("[INSTAGRAM] fetch_message exhausted retries for mid=%s", message_id)
+    return msg if msg else {}
+
+
+def _extract_phone_from_any(obj) -> str | None:
+    """Recursively search a dict/list structure for a phone-number-shaped string."""
+    import re
+    phone_re = re.compile(r"\+?\d[\d\s\-().]{6,18}\d")
+
+    def walk(node):
+        if isinstance(node, str):
+            m = phone_re.search(node)
+            if m:
+                # Keep only digits and leading +
+                raw = m.group(0)
+                cleaned = re.sub(r"[^\d+]", "", raw)
+                if len(re.sub(r"\D", "", cleaned)) >= 7:
+                    return cleaned
+        elif isinstance(node, dict):
+            for v in node.values():
+                found = walk(v)
+                if found:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = walk(item)
+                if found:
+                    return found
+        return None
+
+    return walk(obj)
 
 
 def _extract_text_from_attachments(msg: dict) -> str | None:
