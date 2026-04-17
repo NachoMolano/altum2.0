@@ -80,6 +80,23 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
                     logger.info("[AGENT] Duplicate message_id=%s, skipping", message_id)
                     return
 
+            # 2b. Text-similarity dedup — skip if last user message is similar and recent
+            recent_cutoff = datetime.utcnow() - timedelta(seconds=10)
+            last_user_msg = await session.execute(
+                select(Message)
+                .where(
+                    Message.conversation_id == conversation.id,
+                    Message.role == "user",
+                    Message.created_at >= recent_cutoff,
+                )
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            last_user_msg = last_user_msg.scalar_one_or_none()
+            if last_user_msg and _texts_are_similar(last_user_msg.content, text):
+                logger.info("[AGENT] Similar recent message deduped: %s", text[:60])
+                return
+
             # 3. Load message history
             result = await session.execute(
                 select(Message)
