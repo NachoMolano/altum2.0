@@ -18,7 +18,8 @@ ONBOARDING_TOKEN = "[ONBOARDING_COMPLETE]"
 
 async def process_message(instagram_user_id: str, text: str, message_id: str | None = None) -> None:
     """Main agent flow: receive a user message, generate a response, handle onboarding completion."""
-    # Handle reset command
+    # Handle reset command — close ALL conversations (active + handoff_sent) so the
+    # next message starts fresh. This is essential for testing.
     if text.strip().upper() == "/RESET":
         async with SessionLocal() as session:
             from sqlalchemy import update
@@ -26,7 +27,7 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
                 update(Conversation)
                 .where(
                     Conversation.instagram_user_id == instagram_user_id,
-                    Conversation.state == "active",
+                    Conversation.state.in_(["active", "handoff_sent"]),
                 )
                 .values(state="reset")
             )
