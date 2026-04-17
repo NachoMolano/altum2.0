@@ -18,6 +18,7 @@ HEADERS = [
     "Fecha",
     "Nombre",
     "Empresa",
+    "Ubicacion",
     "Sector",
     "Telefono",
     "Necesidad principal",
@@ -26,7 +27,11 @@ HEADERS = [
     "Objetivo principal",
     "Presupuesto aprox",
     "Instagram User ID",
+    "Estado",
 ]
+
+# Column index (1-based) of Instagram User ID — used to find existing rows
+IG_USER_ID_COL = 12
 
 
 def _get_client() -> gspread.Client:
@@ -45,35 +50,52 @@ def _get_or_create_sheet(spreadsheet: gspread.Spreadsheet, sheet_name: str) -> g
         return ws
 
 
-async def append_prospect(profile: dict) -> bool:
-    """Write a row to the current month's sheet. Returns True on success."""
+def _build_row(profile: dict, is_complete: bool) -> list:
+    return [
+        datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        profile.get("nombre") or "",
+        profile.get("empresa") or "",
+        profile.get("ubicacion") or "",
+        profile.get("sector") or "",
+        profile.get("telefono") or "",
+        profile.get("necesidad_principal") or "",
+        profile.get("presencia_digital") or "",
+        profile.get("tiene_identidad_marca") or "",
+        profile.get("objetivo_principal") or "",
+        profile.get("presupuesto_aprox") or "",
+        profile.get("instagram_user_id") or "",
+        "completo" if is_complete else "en progreso",
+    ]
+
+
+async def upsert_prospect(profile: dict, is_complete: bool = False) -> bool:
+    """
+    Upsert a row in the current month's sheet keyed by instagram_user_id.
+    Creates the row on first call, updates it on subsequent calls.
+    """
     import asyncio
 
+    instagram_user_id = profile.get("instagram_user_id", "")
+
     try:
-        def _sync_append():
+        def _sync_upsert():
             client = _get_client()
             spreadsheet = client.open_by_key(settings.GOOGLE_SPREADSHEET_ID)
             sheet_name = datetime.utcnow().strftime("%Y-%m")
             ws = _get_or_create_sheet(spreadsheet, sheet_name)
 
-            row = [
-                datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-                profile.get("nombre", ""),
-                profile.get("empresa", ""),
-                profile.get("sector", ""),
-                profile.get("telefono", ""),
-                profile.get("necesidad_principal", ""),
-                profile.get("presencia_digital", ""),
-                profile.get("tiene_identidad_marca", ""),
-                profile.get("objetivo_principal", ""),
-                profile.get("presupuesto_aprox", ""),
-                profile.get("instagram_user_id", ""),
-            ]
-            ws.append_row(row)
-            logger.info("[SHEETS] prospect=%s sheet=%s", profile.get("nombre"), sheet_name)
+            row = _build_row(profile, is_complete)
 
-        await asyncio.to_thread(_sync_append)
+            try:
+                cell = ws.find(instagram_user_id, in_column=IG_USER_ID_COL)
+                ws.update(f"A{cell.row}:{chr(64 + len(HEADERS))}{cell.row}", [row])
+                logger.info("[SHEETS] Updated row=%d user=%s complete=%s", cell.row, instagram_user_id, is_complete)
+            except gspread.exceptions.CellNotFound:
+                ws.append_row(row)
+                logger.info("[SHEETS] Inserted new row user=%s", instagram_user_id)
+
+        await asyncio.to_thread(_sync_upsert)
         return True
     except Exception:
-        logger.exception("[SHEETS] Failed to write prospect")
+        logger.exception("[SHEETS] Failed to upsert prospect user=%s", instagram_user_id)
         return False

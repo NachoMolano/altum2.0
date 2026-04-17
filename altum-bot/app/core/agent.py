@@ -5,7 +5,6 @@ import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.db.session import SessionLocal
 from app.models.conversation import Conversation, Message, ProspectProfile
@@ -14,7 +13,9 @@ from app.core.prompts import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-ONBOARDING_TOKEN = "[ONBOARDING_COMPLETE]"
+PARTIAL_TOKEN = "[PERFIL_PARCIAL]"
+COMPLETE_TOKEN = "[ONBOARDING_COMPLETE]"
+JSON_PATTERN = re.compile(r'\{.*?\}', re.DOTALL)
 
 # Per-user async locks to serialize processing and prevent race conditions
 # when Instagram sends multiple webhook events for the same user message
@@ -40,16 +41,14 @@ def _texts_are_similar(a: str, b: str) -> bool:
         return False
     if na == nb:
         return True
-    # Either one fully contains the other (e.g. "Mi whatsapp es 300..." vs "300...")
     if na in nb or nb in na:
         return True
     return False
 
 
 async def process_message(instagram_user_id: str, text: str, message_id: str | None = None) -> None:
-    """Main agent flow: receive a user message, generate a response, handle onboarding completion."""
-    # Handle reset command — close ALL conversations (active + handoff_sent) so the
-    # next message starts fresh. This is essential for testing.
+    """Main agent flow: receive a user message, generate a response, handle onboarding progression."""
+    # Handle reset command
     if text.strip().upper() == "/RESET":
         async with SessionLocal() as session:
             from sqlalchemy import update
@@ -106,13 +105,12 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
             history = result.scalars().all()
 
             # 4. Save user message
-            user_msg = Message(
+            session.add(Message(
                 conversation_id=conversation.id,
                 role="user",
                 content=text,
                 instagram_message_id=message_id,
-            )
-            session.add(user_msg)
+            ))
             await session.flush()
 
             # 5. Build messages for LLM
@@ -129,63 +127,62 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
                 system=system,
             )
 
-            # 7. Detect onboarding completion
+            # 7. Parse token — detect partial update or completion
+            is_complete = COMPLETE_TOKEN in response
+            token = COMPLETE_TOKEN if is_complete else PARTIAL_TOKEN
+
             visible_text = response
             profile_data = None
 
-            if ONBOARDING_TOKEN in response:
-                visible_text = response.split(ONBOARDING_TOKEN)[0].rstrip()
-                match = re.search(r'\[ONBOARDING_COMPLETE\]\s*(\{.*\})', response, re.DOTALL)
+            if token in response:
+                visible_text = response.split(token)[0].rstrip()
+                match = JSON_PATTERN.search(response.split(token)[1])
                 if match:
                     try:
-                        profile_data = json.loads(match.group(1))
+                        profile_data = json.loads(match.group())
                     except json.JSONDecodeError:
-                        logger.error("[AGENT] Failed to parse onboarding JSON")
+                        logger.error("[AGENT] Failed to parse profile JSON")
 
-            # 8. Save assistant message
-            assistant_msg = Message(
+            # 8. Save assistant message (full response with token, for history)
+            session.add(Message(
                 conversation_id=conversation.id,
                 role="assistant",
                 content=response,
-            )
-            session.add(assistant_msg)
-
-            # 9. Update conversation timestamp
+            ))
             conversation.updated_at = datetime.utcnow()
 
-            # 10. Send visible response to Instagram
+            # 9. Send visible response to Instagram
             send_ok = await instagram.send_message(instagram_user_id, visible_text)
 
-            # 11. Handle onboarding completion — only if message was delivered
-            if send_ok and profile_data and conversation.state == "active":
+            # 10. Upsert to Sheets in background on every turn (fire-and-forget)
+            if profile_data:
                 profile_data["instagram_user_id"] = instagram_user_id
+                asyncio.create_task(sheets.upsert_prospect(profile_data, is_complete=is_complete))
 
-                # Save profile to DB
-                profile = ProspectProfile(
-                    conversation_id=conversation.id,
-                    nombre=profile_data.get("nombre"),
-                    empresa=profile_data.get("empresa"),
-                    ubicacion=profile_data.get("ubicacion"),
-                    sector=profile_data.get("sector"),
-                    necesidad_principal=profile_data.get("necesidad_principal"),
-                    presencia_digital=profile_data.get("presencia_digital"),
-                    tiene_identidad_marca=profile_data.get("tiene_identidad_marca"),
-                    objetivo_principal=profile_data.get("objetivo_principal"),
-                    presupuesto_aprox=profile_data.get("presupuesto_aprox"),
-                    telefono=profile_data.get("telefono"),
+            # 11. On completion: update DB profile + send Telegram handoff
+            if send_ok and is_complete and profile_data and conversation.state == "active":
+                existing_profile = await session.execute(
+                    select(ProspectProfile).where(ProspectProfile.conversation_id == conversation.id)
                 )
-                session.add(profile)
+                profile_row = existing_profile.scalar_one_or_none()
+                if profile_row is None:
+                    profile_row = ProspectProfile(conversation_id=conversation.id)
+                    session.add(profile_row)
 
-                # Write to Google Sheets
-                sheets_ok = await sheets.append_prospect(profile_data)
-                if sheets_ok:
-                    profile.sheets_synced = True
+                profile_row.nombre = profile_data.get("nombre")
+                profile_row.empresa = profile_data.get("empresa")
+                profile_row.ubicacion = profile_data.get("ubicacion")
+                profile_row.sector = profile_data.get("sector")
+                profile_row.necesidad_principal = profile_data.get("necesidad_principal")
+                profile_row.presencia_digital = profile_data.get("presencia_digital")
+                profile_row.tiene_identidad_marca = profile_data.get("tiene_identidad_marca")
+                profile_row.objetivo_principal = profile_data.get("objetivo_principal")
+                profile_row.presupuesto_aprox = profile_data.get("presupuesto_aprox")
+                profile_row.telefono = profile_data.get("telefono")
+                profile_row.sheets_synced = True
 
-                # Send Telegram handoff
-                await telegram.send_handoff(profile_data, instagram_user_id)
-
-                # Mark conversation as handoff_sent
                 conversation.state = "handoff_sent"
+                asyncio.create_task(telegram.send_handoff(profile_data, instagram_user_id))
 
             await session.commit()
 
