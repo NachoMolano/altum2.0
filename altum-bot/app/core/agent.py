@@ -1,7 +1,8 @@
+import asyncio
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,6 +15,35 @@ from app.core.prompts import SYSTEM_PROMPT
 logger = logging.getLogger(__name__)
 
 ONBOARDING_TOKEN = "[ONBOARDING_COMPLETE]"
+
+# Per-user async locks to serialize processing and prevent race conditions
+# when Instagram sends multiple webhook events for the same user message
+# (e.g. message + message_edit when a phone number is auto-converted to a card).
+_user_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_user_lock(instagram_user_id: str) -> asyncio.Lock:
+    lock = _user_locks.get(instagram_user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_locks[instagram_user_id] = lock
+    return lock
+
+
+def _texts_are_similar(a: str, b: str) -> bool:
+    """Return True if two user texts should be treated as the same message.
+    Used to dedupe message + message_edit events from Instagram."""
+    def norm(s: str) -> str:
+        return re.sub(r"\s+", " ", s or "").strip().lower()
+    na, nb = norm(a), norm(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    # Either one fully contains the other (e.g. "Mi whatsapp es 300..." vs "300...")
+    if na in nb or nb in na:
+        return True
+    return False
 
 
 async def process_message(instagram_user_id: str, text: str, message_id: str | None = None) -> None:
