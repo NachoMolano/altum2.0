@@ -101,6 +101,10 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     text = details.get("message")
                     message_id = mid
                     logger.info("[WEBHOOK] Fetched message_edit mid=%s sender=%s text=%s", mid, sender_id, text)
+                    # Skip if the message was sent by the bot itself
+                    if sender_id == settings.INSTAGRAM_BUSINESS_ACCOUNT_ID:
+                        logger.info("[WEBHOOK] Skipping bot's own outgoing message mid=%s", mid)
+                        sender_id = None
 
             # 3. Skip echo messages
             if not sender_id or sender_id == recipient_id:
