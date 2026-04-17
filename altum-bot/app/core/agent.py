@@ -112,6 +112,7 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
                 conversation_id=conversation.id,
                 nombre=profile_data.get("nombre"),
                 empresa=profile_data.get("empresa"),
+                ubicacion=profile_data.get("ubicacion"),
                 sector=profile_data.get("sector"),
                 necesidad_principal=profile_data.get("necesidad_principal"),
                 presencia_digital=profile_data.get("presencia_digital"),

@@ -41,6 +41,7 @@ class ProspectProfile(Base):
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
     nombre = Column(String, nullable=True)
     empresa = Column(String, nullable=True)
+    ubicacion = Column(String, nullable=True)
     sector = Column(String, nullable=True)
     necesidad_principal = Column(Text, nullable=True)
     presencia_digital = Column(String, nullable=True)
