@@ -57,12 +57,30 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             # Extract text from attachments (e.g. contact cards with phone numbers)
             if not text and message.get("attachments"):
                 for att in message["attachments"]:
-                    if att.get("type") == "contact":
-                        payload = att.get("payload", {})
-                        text = payload.get("phone_number") or payload.get("contact", {}).get("phone")
+                    att_type = att.get("type", "")
+                    att_payload = att.get("payload", {})
+
+                    if att_type == "contact":
+                        # Explicit contact card shared from contacts app
+                        text = (
+                            att_payload.get("phone_number")
+                            or att_payload.get("contact", {}).get("phone")
+                        )
+
+                    if not text and att_type == "fallback":
+                        # Instagram converts typed phone numbers into fallback attachments
+                        # with a tel: URL (e.g. "tel:3232294754" or "tel:%2B13232294754")
+                        url = att_payload.get("url", "")
+                        if url.lower().startswith("tel:"):
+                            text = url[4:].replace("%2B", "+").replace("%20", "").strip()
+                        else:
+                            text = att_payload.get("title") or att.get("title")
+
                     if not text:
                         text = att.get("title") or att.get("name")
+
                     if text:
+                        logger.info("[WEBHOOK] Extracted text from attachment type=%s text=%s", att_type, text)
                         break
 
             # Handle message_edit with num_edit=0 (new message, no sender info)
@@ -80,7 +98,10 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     logger.info("[WEBHOOK] Fetched message_edit mid=%s sender=%s text=%s", mid, sender_id, text)
 
             # 3. Skip echo messages
-            if not sender_id or not text or sender_id == recipient_id:
+            if not sender_id or sender_id == recipient_id:
+                continue
+            if not text:
+                logger.warning("[WEBHOOK] Could not extract text from message: %s", message)
                 continue
 
             logger.info("[WEBHOOK] user_id=%s text_preview=%s", sender_id, text[:50])

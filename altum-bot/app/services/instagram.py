@@ -78,16 +78,34 @@ def _extract_text_from_attachments(msg: dict) -> str | None:
     attachments = msg.get("attachments", {}).get("data", [])
     logger.info("[INSTAGRAM] Extracting from attachments: %s", attachments)
     for att in attachments:
-        # Contact card with phone number
-        if att.get("type") == "contact":
-            payload = att.get("payload", {})
-            phone = payload.get("phone_number") or payload.get("contact", {}).get("phone")
+        att_type = att.get("type", "")
+        att_payload = att.get("payload", {})
+
+        # Explicit contact card shared from contacts app
+        if att_type == "contact":
+            phone = (
+                att_payload.get("phone_number")
+                or att_payload.get("contact", {}).get("phone")
+            )
             if phone:
                 return phone
-        # Fallback: any attachment with a name or URL as text
+
+        # Instagram converts typed phone numbers into fallback attachments with tel: URL
+        if att_type == "fallback":
+            url = att_payload.get("url", "")
+            if url.lower().startswith("tel:"):
+                phone = url[4:].replace("%2B", "+").replace("%20", "").strip()
+                if phone:
+                    return phone
+            title = att_payload.get("title") or att.get("title")
+            if title:
+                return title
+
+        # Generic fallback: name or title field
         name = att.get("name") or att.get("title")
         if name:
             return name
+
     logger.warning("[INSTAGRAM] No text extracted from attachments: %s", attachments)
     return None
 
