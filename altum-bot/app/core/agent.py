@@ -70,10 +70,14 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
         llm_messages = [{"role": m.role, "content": m.content} for m in history]
         llm_messages.append({"role": "user", "content": text})
 
-        # 6. Call LLM
+        # 6. Call LLM — inject conversation state so it knows if onboarding is done
+        system = SYSTEM_PROMPT
+        if conversation.state == "handoff_sent":
+            system += "\n\n<conversation_state>HANDOFF_COMPLETE: El onboarding ya fue completado y el perfil del prospecto fue registrado. NO reinicies el flujo de preguntas. Solo responde dudas puntuales y recuerda al usuario que un asesor lo contactará pronto.</conversation_state>"
+
         response = await llm.chat_completion(
             messages=llm_messages,
-            system=SYSTEM_PROMPT,
+            system=system,
         )
 
         # 7. Detect onboarding completion
@@ -138,12 +142,12 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
 
 
 async def _get_or_create_conversation(session, instagram_user_id: str) -> Conversation:
-    """Find an active conversation for this user, or create a new one."""
+    """Find an active or handoff_sent conversation for this user, or create a new one."""
     result = await session.execute(
         select(Conversation)
         .where(
             Conversation.instagram_user_id == instagram_user_id,
-            Conversation.state == "active",
+            Conversation.state.in_(["active", "handoff_sent"]),
         )
         .order_by(Conversation.created_at.desc())
     )
