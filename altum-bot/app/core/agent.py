@@ -150,6 +150,7 @@ async def _get_or_create_conversation(session, instagram_user_id: str) -> Conver
             Conversation.state.in_(["active", "handoff_sent"]),
         )
         .order_by(Conversation.created_at.desc())
+        .limit(1)
     )
     conversation = result.scalar_one_or_none()
 
