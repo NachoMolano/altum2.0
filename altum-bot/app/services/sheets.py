@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -73,8 +74,6 @@ async def upsert_prospect(profile: dict, is_complete: bool = False) -> bool:
     Upsert a row in the current month's sheet keyed by instagram_user_id.
     Creates the row on first call, updates it on subsequent calls.
     """
-    import asyncio
-
     instagram_user_id = profile.get("instagram_user_id", "")
 
     try:
@@ -86,11 +85,11 @@ async def upsert_prospect(profile: dict, is_complete: bool = False) -> bool:
 
             row = _build_row(profile, is_complete)
 
-            try:
-                cell = ws.find(instagram_user_id, in_column=IG_USER_ID_COL)
+            cell = ws.find(instagram_user_id, in_column=IG_USER_ID_COL)
+            if cell is not None:
                 ws.update(f"A{cell.row}:{chr(64 + len(HEADERS))}{cell.row}", [row])
                 logger.info("[SHEETS] Updated row=%d user=%s complete=%s", cell.row, instagram_user_id, is_complete)
-            except gspread.exceptions.CellNotFound:
+            else:
                 ws.append_row(row)
                 logger.info("[SHEETS] Inserted new row user=%s", instagram_user_id)
 
