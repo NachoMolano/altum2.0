@@ -140,8 +140,11 @@ async def process_message(instagram_user_id: str, text: str, message_id: str | N
                 if match:
                     try:
                         profile_data = json.loads(match.group())
+                        logger.info("[AGENT] Profile parsed complete=%s keys=%s", is_complete, [k for k, v in profile_data.items() if v])
                     except json.JSONDecodeError:
-                        logger.error("[AGENT] Failed to parse profile JSON")
+                        logger.error("[AGENT] Failed to parse profile JSON: %s", response.split(token)[1][:200])
+            else:
+                logger.warning("[AGENT] LLM response missing token — no sheets update. Response tail: %s", response[-150:])
 
             # 8. Save assistant message (full response with token, for history)
             session.add(Message(
